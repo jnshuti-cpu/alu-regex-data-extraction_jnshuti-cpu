@@ -22,7 +22,7 @@ alu-regex-data-extraction_{GithubUsername}/
 Requires Python 3.8+, standard library only (no third-party packages).
 
 ```bash
-cd alu-regex-data-extraction_{GithubUsername}
+cd alu-regex-data-extraction_jnshuti-cpu
 python3 src/main.py
 ```
 
