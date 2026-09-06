@@ -32,7 +32,7 @@ Also tagging this so it shows up in triage: #billing #urgent #ALU2024 #payment_b
 
 Second contact, our regional finance officer, uses finance.rw@alueducation.com and can be reached
 weekdays between 08:00 and 17:00 (24-hour clock, Kigali time). He also has a personal line
-+1-202-555-0143 for emergencies only.
++1-202-555-0143 for emergencies only. She can also be reached via WhatsApp at +250.788.234.567 for quick questions.
 
 Random junk pasted from clipboard for testing extraction robustness:
 not-an-email@@bad..com, http:/broken-url.com, www.missing-scheme.example, 999-99-9999,

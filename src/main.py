@@ -240,9 +240,9 @@ def extract_urls(text: str):
 # numbers or long ID strings.
 PHONE_RE = re.compile(
     r"(?<!\d)"
-    r"(?:\+\d{1,3}[ -]?)?"                # optional country code
+    r"(?:\+\d{1,3}[ .-]?)?"               # optional country code
     r"(?:\(\d{2,4}\)[ -]?)?"              # optional area code in parens
-    r"\d{2,4}(?:[ -]\d{2,4}){1,4}"        # grouped digits
+    r"\d{2,4}(?:[ .-]\d{2,4}){1,4}"       # grouped digits (space, dot, or hyphen separated)
     r"(?!\d)"
 )
 
