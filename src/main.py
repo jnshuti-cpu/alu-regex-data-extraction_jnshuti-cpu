@@ -367,11 +367,11 @@ def run(input_path: str, output_path: str):
         json.dump(report, f, indent=2)
 
     # Console summary (also uses only masked values)
-    print("=== ALU Regex Data Extraction: Summary ===")
+    print("     ALU REGEX DATA EXTRACTION      ")
     for key, value in report["summary"].items():
         print(f"{key:30s}: {value}")
     if security_flags:
-        print("\n!! SECURITY FLAGS RAISED !!")
+        print("\n     SECURITY FLAGS RAISED     ")
         for flag in security_flags:
             print(f" - {flag}")
     print(f"\nFull report written to: {output_path}")
