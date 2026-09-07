@@ -10,15 +10,11 @@ Course: ALU - Formative Assessment (Regex Data Extraction)
 WHAT THIS SCRIPT DOES
 ----------------------
 1. Reads a raw text file (input/raw-text.txt).
-2. Runs a battery of hardened regex patterns against it to extract:
-      - Email addresses (general + ALU-specific domains)
-      - Credit card numbers (with Luhn checksum validation)
+2. Runs hardened regex patterns against it to extract 4 data types:
+      - Email addresses (general + ALU-specific domains)  [required]
+      - Credit card numbers (with Luhn checksum validation) [required]
       - URLs
       - Phone numbers
-      - Time values (12-hour and 24-hour clock)
-      - HTML tags (flagging dangerous/executable ones as a security signal)
-      - Hashtags
-      - Currency amounts
 3. Treats the input as UNTRUSTED. Nothing extracted is assumed safe just
    because a pattern matched syntactically (see SECURITY NOTES below).
 4. Produces a structured, masked JSON report + a human-readable console
@@ -27,9 +23,11 @@ WHAT THIS SCRIPT DOES
 
 SECURITY NOTES (see also inline comments near each function)
 --------------------------------------------------------------
-- Input is never treated as trusted or executable. HTML/script fragments
-  found in the text are detected and reported as *findings*, never
-  rendered, evaluated, or passed to a shell/DB.
+- Input is never treated as trusted or executable. Even though this
+  version does not extract HTML tags as a data type, the text is still
+  scanned for dangerous patterns (script tags, inline event handlers,
+  SQL-injection-style fragments) and any hits are reported as security
+  flags rather than silently ignored or silently trusted.
 - Regex patterns are written to avoid catastrophic backtracking
   (no nested quantifiers like (a+)+ ; character classes are bounded with
   explicit {min,max} lengths instead of unbounded '+' where it matters).
@@ -42,10 +40,6 @@ SECURITY NOTES (see also inline comments near each function)
   output/sample-output.json or printed in the summary, because those are
   the two data types this assessment explicitly calls out as sensitive.
   Full values stay only in memory during the run.
-- Obvious injection artifacts (SQL-injection-looking fragments, <script>
-  tags, inline event handlers like onerror=) are flagged in a separate
-  "security_flags" section instead of being silently extracted as if they
-  were normal data.
 """
 
 import json
@@ -74,9 +68,21 @@ def load_and_sanitize(path: str) -> str:
         trick.
       - We enforce MAX_INPUT_CHARS so we never hand an unbounded amount
         of attacker-controlled text to our regex engine.
+      - Missing/unreadable files fail with a clear error instead of a
+        raw traceback, since we should never assume the environment is
+        set up correctly.
     """
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        text = f.read()
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except FileNotFoundError:
+        raise SystemExit(
+            f"ERROR: input file not found at '{path}'. "
+            f"Make sure you're running this script from the project root "
+            f"(e.g. `python3 src/main.py`), and that {path} exists."
+        )
+    except PermissionError:
+        raise SystemExit(f"ERROR: permission denied reading '{path}'.")
 
     if len(text) > MAX_INPUT_CHARS:
         text = text[:MAX_INPUT_CHARS]
@@ -92,7 +98,7 @@ def load_and_sanitize(path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1) EMAIL ADDRESSES  (general + ALU-specific)
+# 1) EMAIL ADDRESSES  (general + ALU-specific)  [REQUIRED]
 # ---------------------------------------------------------------------------
 # General, RFC-5322-ish but practical email pattern. We deliberately do NOT
 # try to implement the full RFC grammar (it's absurdly complex and mostly
@@ -153,7 +159,7 @@ def extract_emails(text: str):
 
 
 # ---------------------------------------------------------------------------
-# 2) CREDIT CARD NUMBERS  (shape match + Luhn checksum validation)
+# 2) CREDIT CARD NUMBERS  (shape match + Luhn checksum validation)  [REQUIRED]
 # ---------------------------------------------------------------------------
 # Matches 13-19 digit numbers grouped in blocks of 4 (with optional spaces
 # or hyphens as separators), which covers Visa/Mastercard/Amex/Discover-style
@@ -167,9 +173,21 @@ CREDIT_CARD_RE = re.compile(
 
 def luhn_is_valid(card_number: str) -> bool:
     """
-    Standard Luhn checksum. This is what separates a *real-looking* card
-    number from something that merely has the right shape (e.g. the
-    obviously-fake '1234-5678-9012-3456' used as a test payload).
+    Standard Luhn checksum (mod 10 algorithm), used by virtually all major
+    card issuers (Visa, Mastercard, Amex, Discover) to catch accidental
+    typos and obviously-fabricated numbers before they even reach a payment
+    processor.
+
+    How it works:
+      1. Starting from the rightmost digit, double every second digit.
+      2. If doubling a digit produces a number > 9, subtract 9 from it
+         (equivalent to summing its two digits, e.g. 8*2=16 -> 1+6=7).
+      3. Sum all the digits (doubled and untouched).
+      4. The number is valid if that sum is divisible by 10.
+
+    This is what separates a *real-looking* card number from something
+    that merely has the right shape (e.g. the obviously-fake
+    '1234-5678-9012-3456' used as a test payload in our sample input).
     """
     digits = [int(d) for d in card_number if d.isdigit()]
     if not (13 <= len(digits) <= 19):
@@ -234,7 +252,8 @@ def extract_urls(text: str):
 # ---------------------------------------------------------------------------
 # 4) PHONE NUMBERS
 # ---------------------------------------------------------------------------
-# Handles: +250 788 123 456, +1-202-555-0143, (415) 555-0192, etc.
+# Handles: +250 788 123 456, +1-202-555-0143, (415) 555-0192,
+# +250.788.234.567 (dot-separated, e.g. WhatsApp-style), etc.
 # Requires at least 7 digits total to avoid matching short numeric noise
 # (e.g. ticket numbers, times) and caps length to avoid matching card
 # numbers or long ID strings.
@@ -262,8 +281,6 @@ def extract_phone_numbers(text: str):
     for m in PHONE_RE.finditer(text):
         raw = m.group(0).strip()
         n_digits = _digit_count(raw)
-        # Filter out things that are too short (e.g. "9:00") or too long
-        # (e.g. an accidental credit-card-shaped match) to be a real phone number.
         if not (7 <= n_digits <= 15):
             continue
         # Exclude shapes that are not phone numbers even though they are
@@ -283,97 +300,9 @@ def extract_phone_numbers(text: str):
 
 
 # ---------------------------------------------------------------------------
-# 5) TIME (12-hour and 24-hour)
-# ---------------------------------------------------------------------------
-# 12-hour: 1-12, optional minutes, required AM/PM
-TIME_12H_RE = re.compile(
-    r"\b(1[0-2]|0?[1-9]):([0-5]\d)\s?([AaPp][Mm])\b"
-)
-# 24-hour: 00-23 hours, 00-59 minutes
-TIME_24H_RE = re.compile(
-    r"\b([01]\d|2[0-3]):([0-5]\d)\b"
-)
-
-
-def extract_times(text: str):
-    times_12h = [m.group(0) for m in TIME_12H_RE.finditer(text)]
-    # For 24h matches, exclude any that overlap with an already-matched 12h
-    # time written without AM/PM stripped (rare, but keeps output clean),
-    # and exclude obviously invalid values like 25:00 / 13:75 by construction
-    # (the pattern itself already can't match those - shown here for clarity).
-    times_24h = [m.group(0) for m in TIME_24H_RE.finditer(text)]
-    return {"12_hour": times_12h, "24_hour": times_24h}
-
-
-# ---------------------------------------------------------------------------
-# 6) HTML TAGS  (extraction + security flagging, never rendered/executed)
-# ---------------------------------------------------------------------------
-HTML_TAG_RE = re.compile(r"<\s*/?\s*([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>")
-
-# Tags/attributes that are red flags for stored-XSS style payloads.
-DANGEROUS_TAGS = {"script", "iframe", "object", "embed"}
-DANGEROUS_ATTR_RE = re.compile(r"\bon\w+\s*=", re.IGNORECASE)  # onerror=, onclick=, ...
-
-
-def extract_html_tags(text: str):
-    tags_found = []
-    security_flags = []
-    for m in HTML_TAG_RE.finditer(text):
-        tag_name = m.group(1).lower()
-        full_tag = m.group(0)
-        # Guard against false positives such as an email address written in
-        # angle brackets, e.g. "<grace.uwase@alueducation.com>", which is
-        # syntactically shaped like a tag but is not one. Real HTML tags
-        # never contain '@', and any "attributes" area must look like
-        # attribute syntax (whitespace-separated, optionally key=value),
-        # not free text with a dot-separated local part.
-        if "@" in full_tag:
-            continue
-        tags_found.append(tag_name)
-        if tag_name in DANGEROUS_TAGS:
-            security_flags.append(f"Dangerous tag detected: <{tag_name}> (not executed, flagged only)")
-        if DANGEROUS_ATTR_RE.search(full_tag):
-            security_flags.append(f"Inline event handler detected in tag: {full_tag[:60]}...")
-    return tags_found, security_flags
-
-
-# ---------------------------------------------------------------------------
-# 7) HASHTAGS
-# ---------------------------------------------------------------------------
-HASHTAG_RE = re.compile(r"(?<!\w)#([A-Za-z][A-Za-z0-9_]{1,49})\b")
-
-
-def extract_hashtags(text: str):
-    return sorted(set(m.group(0) for m in HASHTAG_RE.finditer(text)))
-
-
-# ---------------------------------------------------------------------------
-# 8) CURRENCY AMOUNTS
-# ---------------------------------------------------------------------------
-# Covers symbol-prefixed amounts ($1,250.00 / €45,00 / £120.75) and
-# ISO-code-prefixed amounts (USD 1,199.50 / KES 15,000).
-CURRENCY_SYMBOL_RE = re.compile(
-    r"([$€£¥])\s?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)"
-)
-CURRENCY_CODE_RE = re.compile(
-    r"\b([A-Z]{3})\s?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\b"
-)
-KNOWN_CURRENCY_CODES = {"USD", "EUR", "GBP", "KES", "RWF", "UGX", "TZS", "NGN", "GHS", "ZAR"}
-
-
-def extract_currency(text: str):
-    amounts = []
-    for m in CURRENCY_SYMBOL_RE.finditer(text):
-        amounts.append(f"{m.group(1)}{m.group(2)}")
-    for m in CURRENCY_CODE_RE.finditer(text):
-        if m.group(1) in KNOWN_CURRENCY_CODES:
-            amounts.append(f"{m.group(1)} {m.group(2)}")
-    return amounts
-
-
-# ---------------------------------------------------------------------------
-# SECURITY: detect suspicious / injection-style content in the raw text.
-# These are *reported*, never executed, never used to build a query/command.
+# SECURITY: detect suspicious / injection-style content in the raw text,
+# independent of which data types we extract as "results". These are
+# *reported*, never executed, never used to build a query/command.
 # ---------------------------------------------------------------------------
 SQLI_PATTERN_RE = re.compile(
     r"(?:'\s*;\s*DROP\s+TABLE)"
@@ -383,11 +312,22 @@ SQLI_PATTERN_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Even though this version doesn't extract HTML tags as a data type, a
+# hostile payload embedded in the text (e.g. a stored-XSS attempt riding
+# along inside what looks like a support ticket) should still be caught
+# and reported rather than silently ignored.
+SCRIPT_TAG_RE = re.compile(r"<\s*script\b", re.IGNORECASE)
+EVENT_HANDLER_RE = re.compile(r"\bon\w+\s*=\s*[\"']", re.IGNORECASE)
 
-def detect_security_flags(text: str, html_flags):
-    flags = list(html_flags)
+
+def detect_security_flags(text: str):
+    flags = []
     for m in SQLI_PATTERN_RE.finditer(text):
         flags.append(f"Possible SQL-injection-style fragment detected near position {m.start()}")
+    for m in SCRIPT_TAG_RE.finditer(text):
+        flags.append(f"Possible <script> tag detected near position {m.start()} (not executed, flagged only)")
+    for m in EVENT_HANDLER_RE.finditer(text):
+        flags.append(f"Possible inline event handler detected near position {m.start()} (e.g. onerror=)")
     return flags
 
 
@@ -401,11 +341,7 @@ def run(input_path: str, output_path: str):
     cards = extract_credit_cards(text)
     urls = extract_urls(text)
     phones = extract_phone_numbers(text)
-    times = extract_times(text)
-    html_tags, html_security_flags = extract_html_tags(text)
-    hashtags = extract_hashtags(text)
-    currency = extract_currency(text)
-    security_flags = detect_security_flags(text, html_security_flags)
+    security_flags = detect_security_flags(text)
 
     report = {
         "summary": {
@@ -414,21 +350,12 @@ def run(input_path: str, output_path: str):
             "credit_cards_luhn_valid": sum(1 for c in cards if c["luhn_valid"]),
             "urls_found": len(urls),
             "phone_numbers_found": len(phones),
-            "times_12h_found": len(times["12_hour"]),
-            "times_24h_found": len(times["24_hour"]),
-            "html_tags_found": len(html_tags),
-            "hashtags_found": len(hashtags),
-            "currency_amounts_found": len(currency),
             "security_flags_raised": len(security_flags),
         },
         "emails": emails,                      # masked
         "credit_cards": cards,                 # masked, with luhn_valid flag
         "urls": urls,
         "phone_numbers": phones,
-        "times": times,
-        "html_tags_found": sorted(set(html_tags)),
-        "hashtags": hashtags,
-        "currency_amounts": currency,
         "security_flags": security_flags,
         "note": (
             "Emails and credit card numbers are masked in this file by design. "

