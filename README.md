@@ -9,11 +9,11 @@ returned by an external API).
 ```
 alu-regex-data-extraction_jnshuti-cpu/
 ├── input/
-│   └── raw-text.txt        # realistic, messy sample input
+│   └── raw-text.txt        
 ├── src/
-│   └── main.py              # extraction + validation logic
+│   └── main.py              
 ├── output/
-│   └── sample-output.json   # generated report (masked, safe to share)
+│   └── sample-output.json   
 └── README.md
 ```
 
